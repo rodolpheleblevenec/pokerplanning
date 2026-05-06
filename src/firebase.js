@@ -17,13 +17,13 @@ rooms/{code}
 */
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "AIzaSyBv0Fr_hMO0cQuoCuQNUSZaGhOCzB4ONXQ",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? "pokerplanning-495508.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "pokerplanning-495508",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? "pokerplanning-495508.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? "866295040752",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "1:866295040752:web:8bc9935299410d2264d035",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ?? "G-RT4EYW8LVQ",
 };
 
 const app = initializeApp(firebaseConfig);

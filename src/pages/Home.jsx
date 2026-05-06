@@ -5,8 +5,6 @@ import { db } from "../firebase";
 import { useToast } from "../components/Toast";
 import "../layout.css";
 
-const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN ?? "1234";
-
 const WORDS = [
   "JARDIN", "SOLEIL", "MAISON", "CHEMIN", "MOUTON", "CANARD", "CHEVAL", "PIERRE",
   "FLEUVE", "MARCHE", "RAPIDE", "ORANGE", "VIOLET", "BUREAU", "NATION", "SAISON",
@@ -61,8 +59,6 @@ export default function Home() {
   const navigate = useNavigate();
   const toast = useToast();
   const [step, setStep] = useState("landing");
-  const [pin, setPin] = useState("");
-  const [pinError, setPinError] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [roomError, setRoomError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -70,11 +66,10 @@ export default function Home() {
   const mySessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
 
   function reset(toStep) {
-    setPin(""); setPinError(""); setRoomCode(""); setRoomError(""); setStep(toStep);
+    setRoomCode(""); setRoomError(""); setStep(toStep);
   }
 
   async function handleCreate() {
-    if (pin !== ADMIN_PIN) { setPinError("Code PIN incorrect"); return; }
     setLoading(true);
     try {
       const code = randomCode();
@@ -155,8 +150,8 @@ export default function Home() {
         {step === "landing" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-primary" onClick={() => setStep("create-pin")} style={{ flex: 1 }}>
-                Créer une room
+              <button className="btn btn-primary" onClick={handleCreate} disabled={loading} style={{ flex: 1 }}>
+                {loading ? "Création…" : "Créer une room"}
               </button>
               <button className="btn btn-ghost" onClick={() => setStep("join-code")} style={{ flex: 1 }}>
                 Rejoindre
@@ -167,37 +162,6 @@ export default function Home() {
                 Mes sessions ({mySessions.length})
               </button>
             )}
-          </div>
-        )}
-
-        {/* PIN */}
-        {step === "create-pin" && (
-          <div>
-            <BackBtn onClick={() => reset("landing")} />
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Code PIN</p>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>Entrez le PIN pour créer une room.</p>
-            <input
-              type="password"
-              inputMode="numeric"
-              maxLength={4}
-              value={pin}
-              onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setPinError(""); }}
-              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-              placeholder="••••"
-              autoFocus
-              style={{
-                width: "100%", padding: "12px", borderRadius: 7,
-                border: `1px solid ${pinError ? "#dc2626" : "#e5e7eb"}`,
-                fontSize: 24, letterSpacing: 12, textAlign: "center",
-                outline: "none", marginBottom: pinError ? 6 : 16,
-                fontFamily: "inherit", color: "#111827",
-              }}
-            />
-            {pinError && <p style={{ color: "#dc2626", fontSize: 12, margin: "0 0 12px" }}>{pinError}</p>}
-            <button className="btn btn-primary" onClick={handleCreate}
-              disabled={pin.length !== 4 || loading} style={{ width: "100%" }}>
-              {loading ? "Création…" : "Créer la room"}
-            </button>
           </div>
         )}
 
