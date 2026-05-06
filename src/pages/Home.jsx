@@ -1,189 +1,279 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import "../layout.css";
 
-const MOCK_SESSIONS = [
-  { id: "PP-2026-01", title: "Refinement 28/04/2026", participants: ["Djamal", "Nicolas", "Moez", "Sarah"], status: "active" },
-  { id: "PP-2026-02", title: "Refinement 21/04/2026", participants: ["Djamal", "Nicolas", "Moez"], status: "closed" },
-  { id: "PP-2026-03", title: "Refinement 14/04/2026", participants: ["Nicolas", "Sarah", "Karim"], status: "closed" },
+const ADMIN_PIN = "1234"; // Modifier ici pour changer le PIN
+
+const WORDS = [
+  "JARDIN", "SOLEIL", "MAISON", "CHEMIN", "MOUTON", "CANARD", "CHEVAL", "PIERRE",
+  "FLEUVE", "MARCHE", "RAPIDE", "ORANGE", "VIOLET", "BUREAU", "NATION", "SAISON",
+  "VOYAGE", "MARRON", "PRISON", "FLEURS", "TOMATE", "CARNET", "MIROIR", "BOUGIE",
+  "BALLON", "BANANE", "CAHIER", "CASQUE", "CLOCHE", "COMBAT", "DESSIN", "DISQUE",
+  "DRAGON", "ENFANT", "FACILE", "GARAGE", "GATEAU", "GRILLE", "HAMEAU", "JUNGLE",
+  "LETTRE", "LIMITE", "LUSTRE", "MARAIS", "MEUBLE", "MONTRE", "MOUCHE", "MUSEAU",
+  "NUAGES", "OISEAU", "PALAIS", "PAPIER", "PARDON", "PAROLE", "PELOTE", "PHRASE",
+  "PIGEON", "PILOTE", "PLANTE", "PLAQUE", "POULET", "POUMON", "PROJET", "PROPRE",
+  "PUZZLE", "QUARTZ", "RADEAU", "RAISIN", "RENARD", "REQUIN", "RESEAU", "RIDEAU",
+  "RIVAGE", "ROSEAU", "SABLES", "SAUMON", "SAVANE", "SECRET", "SIGNAL", "SIRENE",
+  "SOLDAT", "SOMMET", "SOURIS", "STATUE", "TALENT", "TAMPON", "TOISON", "TURBAN",
+  "UNIQUE", "VALISE", "VENTRE", "VERGER", "VIANDE", "VILAIN", "VISION", "VOLANT",
+  "VOLCAN",
 ];
 
-function StatusBadge({ status }) {
-  const isActive = status === "active";
+const NAMES = ["Djamal", "Nicolas", "Moez", "Paul", "Malek", "Autre"];
+
+function randomCode() {
+  return WORDS[Math.floor(Math.random() * WORDS.length)];
+}
+
+function Avatar({ name, size = 36 }) {
   return (
-    <span style={{
-      backgroundColor: isActive ? "#dcfce7" : "#f3f4f6",
-      color: isActive ? "#16a34a" : "#6b7280",
-      padding: "2px 10px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 600,
-      whiteSpace: "nowrap",
+    <div style={{
+      width: size, height: size, borderRadius: "50%", background: "#12121f",
+      color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: size * 0.38, fontWeight: 700, flexShrink: 0,
     }}>
-      {isActive ? "Active" : "Clôturée"}
-    </span>
+      {name[0].toUpperCase()}
+    </div>
   );
 }
 
-function SessionCard({ session }) {
+function BackButton({ onClick }) {
   return (
-    <div style={{
-      background: "#fff",
-      borderRadius: 10,
-      padding: "16px 20px",
-      marginBottom: 10,
-      boxShadow: "0 1px 4px rgba(0,0,0,0.07)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 12,
+    <button onClick={onClick} style={{
+      background: "none", border: "none", color: "#6b7280", fontSize: 13,
+      cursor: "pointer", padding: "0 0 20px", display: "flex", alignItems: "center", gap: 6,
     }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 3 }}>#{session.id}</div>
-        <div style={{ fontWeight: 600, fontSize: 15, color: "#111827", marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {session.title}
-        </div>
-        <div style={{ fontSize: 13, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {session.participants.join(" · ")}
-        </div>
-      </div>
-      <StatusBadge status={session.status} />
-    </div>
+      ← Retour
+    </button>
   );
 }
 
 export default function Home() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("active");
-  const [search, setSearch] = useState("");
+  const [step, setStep] = useState("landing");
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [roomCode, setRoomCode] = useState("");
+  const [roomError, setRoomError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  async function handleNewSession() {
+  function reset(toStep) {
+    setPin(""); setPinError("");
+    setRoomCode(""); setRoomError("");
+    setStep(toStep);
+  }
+
+  async function handleCreate() {
+    if (pin !== ADMIN_PIN) { setPinError("Code PIN incorrect"); return; }
     setLoading(true);
     try {
-      const today = new Date();
-      const formatted = today.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-      const docRef = await addDoc(collection(db, "sessions"), {
-        title: `Refinement ${formatted}`,
+      const code = randomCode();
+      await setDoc(doc(db, "rooms", code), {
+        createdBy: "Rodolphe",
+        status: "waiting",
+        currentStory: "",
+        participants: {},
+        votes: {},
+        revealed: false,
         createdAt: serverTimestamp(),
-        status: "active",
-        stories: [],
       });
-      navigate(`/room/${docRef.id}`);
+      localStorage.setItem(`poker_room_${code}_role`, "po");
+      navigate(`/room/${code}`);
     } finally {
       setLoading(false);
     }
   }
 
-  const filtered = MOCK_SESSIONS.filter((s) => {
-    const matchesTab = activeTab === "active" ? s.status === "active" : s.status === "closed";
-    return matchesTab && s.title.toLowerCase().includes(search.toLowerCase());
-  });
+  async function handleJoinCode() {
+    const code = roomCode.toUpperCase();
+    if (code.length !== 6) { setRoomError("Le code doit faire 6 lettres"); return; }
+    setLoading(true);
+    try {
+      const snap = await getDoc(doc(db, "rooms", code));
+      if (!snap.exists()) { setRoomError("Room introuvable — vérifie le code"); return; }
+      setRoomError("");
+      setStep("join-name");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleJoinName(name) {
+    const code = roomCode.toUpperCase();
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, "rooms", code), {
+        [`participants.${name}`]: { voted: false, joined: true },
+      });
+      localStorage.setItem(`poker_room_${code}_name`, name);
+      navigate(`/room/${code}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="app-shell">
-      {/* Mobile topbar */}
-      <div className="topbar">
-        <span className="topbar-title">Poker Planning</span>
-        <button className="burger" onClick={() => setSidebarOpen(true)} aria-label="Menu">
-          <span /><span /><span />
-        </button>
+    <div style={{
+      display: "flex", height: "100dvh", alignItems: "center", justifyContent: "center",
+      background: "#f4f5f9", fontFamily: "Inter, system-ui, sans-serif", padding: "0 16px",
+    }}>
+      <div style={{
+        background: "#fff", borderRadius: 16, padding: "40px 40px",
+        boxShadow: "0 4px 32px rgba(0,0,0,0.08)", width: "100%", maxWidth: 380,
+      }}>
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 36 }}>
+          <div style={{
+            width: 52, height: 52, background: "#12121f", borderRadius: 14,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 14px", fontSize: 24,
+          }}>
+            🃏
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+            Poker Planning
+          </h1>
+          <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>
+            Sessions de refinement en équipe
+          </p>
+        </div>
+
+        {/* Step: landing */}
+        {step === "landing" && (
+          <div style={{ display: "flex", gap: 12 }}>
+            <button
+              onClick={() => setStep("create-pin")}
+              style={{
+                flex: 1, padding: "14px 0", background: "#12121f", color: "#fff",
+                border: "none", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
+              }}
+            >
+              Créer une room
+            </button>
+            <button
+              onClick={() => setStep("join-code")}
+              style={{
+                flex: 1, padding: "14px 0", background: "#fff", color: "#111827",
+                border: "2px solid #e5e7eb", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
+              }}
+            >
+              Rejoindre
+            </button>
+          </div>
+        )}
+
+        {/* Step: PIN */}
+        {step === "create-pin" && (
+          <div>
+            <BackButton onClick={() => reset("landing")} />
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Code PIN</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
+              Entrez le code PIN pour créer une room.
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pin}
+              onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setPinError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              placeholder="••••"
+              autoFocus
+              style={{
+                width: "100%", padding: "12px", borderRadius: 8,
+                border: `1.5px solid ${pinError ? "#ef4444" : "#e5e7eb"}`,
+                fontSize: 22, letterSpacing: 10, textAlign: "center",
+                outline: "none", marginBottom: 6,
+              }}
+            />
+            {pinError && <p style={{ color: "#ef4444", fontSize: 12, margin: "0 0 10px" }}>{pinError}</p>}
+            <button
+              onClick={handleCreate}
+              disabled={pin.length !== 4 || loading}
+              style={{
+                width: "100%", marginTop: 16, padding: "12px", background: "#2563eb", color: "#fff",
+                border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14,
+                cursor: pin.length !== 4 || loading ? "not-allowed" : "pointer",
+                opacity: pin.length !== 4 || loading ? 0.5 : 1,
+              }}
+            >
+              {loading ? "Création…" : "Créer la room"}
+            </button>
+          </div>
+        )}
+
+        {/* Step: room code */}
+        {step === "join-code" && (
+          <div>
+            <BackButton onClick={() => reset("landing")} />
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Code de la room</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
+              Entrez le code à 6 lettres communiqué par le PO.
+            </p>
+            <input
+              type="text"
+              maxLength={6}
+              value={roomCode}
+              onChange={(e) => { setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, "")); setRoomError(""); }}
+              onKeyDown={(e) => e.key === "Enter" && handleJoinCode()}
+              placeholder="JARDIN"
+              autoFocus
+              style={{
+                width: "100%", padding: "12px", borderRadius: 8,
+                border: `1.5px solid ${roomError ? "#ef4444" : "#e5e7eb"}`,
+                fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700,
+                outline: "none", marginBottom: 6, textTransform: "uppercase",
+              }}
+            />
+            {roomError && <p style={{ color: "#ef4444", fontSize: 12, margin: "0 0 10px" }}>{roomError}</p>}
+            <button
+              onClick={handleJoinCode}
+              disabled={roomCode.length !== 6 || loading}
+              style={{
+                width: "100%", marginTop: 16, padding: "12px", background: "#2563eb", color: "#fff",
+                border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14,
+                cursor: roomCode.length !== 6 || loading ? "not-allowed" : "pointer",
+                opacity: roomCode.length !== 6 || loading ? 0.5 : 1,
+              }}
+            >
+              {loading ? "Vérification…" : "Continuer →"}
+            </button>
+          </div>
+        )}
+
+        {/* Step: name selection */}
+        {step === "join-name" && (
+          <div>
+            <BackButton onClick={() => setStep("join-code")} />
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Qui êtes-vous ?</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
+              Room <strong>{roomCode.toUpperCase()}</strong>
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {NAMES.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => handleJoinName(name)}
+                  disabled={loading}
+                  style={{
+                    padding: "11px 14px", background: "#fff", color: "#111827",
+                    border: "1.5px solid #e5e7eb", borderRadius: 8,
+                    fontSize: 14, fontWeight: 500, textAlign: "left", cursor: "pointer",
+                    display: "flex", alignItems: "center", gap: 10,
+                    opacity: loading ? 0.6 : 1,
+                  }}
+                >
+                  <Avatar name={name} size={32} />
+                  {name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-
-      {/* Overlay */}
-      <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
-
-      {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div style={{ color: "#fff", fontWeight: 700, fontSize: 17, marginBottom: 28 }}>
-          Poker Planning
-        </div>
-
-        <button
-          onClick={handleNewSession}
-          disabled={loading}
-          style={{
-            background: "#2563eb", color: "#fff", border: "none", borderRadius: 8,
-            padding: "10px 0", fontWeight: 600, fontSize: 14,
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1, marginBottom: 28,
-          }}
-        >
-          {loading ? "Création..." : "+ Nouvelle session"}
-        </button>
-
-        <nav style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {[{ label: "Sessions actives", value: "active" }, { label: "Historique", value: "closed" }].map(({ label, value }) => (
-            <button
-              key={value}
-              onClick={() => { setActiveTab(value); setSidebarOpen(false); }}
-              style={{
-                background: activeTab === value ? "rgba(255,255,255,0.08)" : "transparent",
-                color: activeTab === value ? "#60a5fa" : "#d1d5db",
-                borderLeft: activeTab === value ? "2px solid #2563eb" : "2px solid transparent",
-                border: "none",
-                borderRadius: 6,
-                padding: "9px 12px",
-                textAlign: "left",
-                fontSize: 14,
-                cursor: "pointer",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      {/* Main */}
-      <main className="main">
-        <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 18 }}>Accueil &gt; Sessions</div>
-
-        <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
-          Sessions de Refinement
-        </h1>
-        <p style={{ fontSize: 14, color: "#6b7280", margin: "0 0 24px" }}>
-          Retrouvez l'ensemble de vos sessions de poker planning
-        </p>
-
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-          {[{ label: "Sessions actives", value: "active" }, { label: "Historique", value: "closed" }].map((tab) => (
-            <button
-              key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
-              style={{
-                background: activeTab === tab.value ? "#2563eb" : "#fff",
-                color: activeTab === tab.value ? "#fff" : "#6b7280",
-                border: "1px solid",
-                borderColor: activeTab === tab.value ? "#2563eb" : "#e5e7eb",
-                borderRadius: 8, padding: "7px 16px", fontSize: 14, fontWeight: 500, cursor: "pointer",
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <input
-          type="text"
-          placeholder="Rechercher une session..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          style={{
-            width: "100%", maxWidth: 420, padding: "9px 14px",
-            borderRadius: 8, border: "1px solid #e5e7eb",
-            fontSize: 14, marginBottom: 20, outline: "none",
-          }}
-        />
-
-        {filtered.length === 0
-          ? <p style={{ color: "#9ca3af", fontSize: 14 }}>Aucune session trouvée.</p>
-          : filtered.map((s) => <SessionCard key={s.id} session={s} />)
-        }
-      </main>
     </div>
   );
 }

@@ -1,154 +1,138 @@
 import { useEffect, useState } from "react";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { db, computeResult } from "../firebase";
-import StoryInput from "./StoryInput";
 import VoteCards from "./VoteCards";
-import PlayersList from "./PlayersList";
 import Results from "./Results";
+import StoryInput from "./StoryInput";
 import "../layout.css";
 
-function VotingTracker({ players, votes, onReveal }) {
-  const voteCount = Object.keys(votes).length;
-  const total = players.length;
-  const pct = total === 0 ? 0 : Math.round((voteCount / total) * 100);
-  const allVoted = total > 0 && voteCount === total;
-
+/* ── Participant card with 3D flip ── */
+function ParticipantCard({ name, voted, revealed, vote }) {
+  const flipped = voted && !revealed;
   return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1, background: "#e5e7eb", borderRadius: 999, height: 8, overflow: "hidden" }}>
+    <div className="card-flip">
+      <div className={`card-inner ${flipped ? "flipped" : ""}`}>
+        {/* Front */}
+        <div className="card-face">
           <div style={{
-            width: `${pct}%`, height: "100%",
-            background: allVoted ? "#16a34a" : "#2563eb",
-            borderRadius: 999, transition: "width 0.4s ease",
-          }} />
-        </div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: allVoted ? "#16a34a" : "#2563eb", whiteSpace: "nowrap" }}>
-          {voteCount} / {total}
-        </span>
-      </div>
-
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))",
-        gap: 10,
-        marginBottom: 24,
-      }}>
-        {players.map((player) => {
-          const hasVoted = votes[player] !== undefined;
-          return (
-            <div key={player} style={{
-              background: hasVoted ? "#f0fdf4" : "#fff",
-              border: `2px solid ${hasVoted ? "#86efac" : "#e5e7eb"}`,
-              borderRadius: 10,
-              padding: "14px 10px",
-              textAlign: "center",
-              transition: "all 0.25s",
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: "50%",
-                background: hasVoted ? "#16a34a" : "#f3f4f6",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                margin: "0 auto 8px", fontSize: 16, transition: "background 0.25s",
-              }}>
-                {hasVoted ? "✓" : (
-                  <span style={{
-                    display: "inline-block", width: 8, height: 8,
-                    borderRadius: "50%", background: "#d1d5db",
-                    animation: "pulse 1.5s infinite",
-                  }} />
-                )}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: hasVoted ? "#15803d" : "#6b7280" }}>
-                {player}
-              </div>
-              <div style={{ fontSize: 11, color: hasVoted ? "#16a34a" : "#9ca3af", marginTop: 2 }}>
-                {hasVoted ? "A voté" : "En attente"}
-              </div>
+            width: 40, height: 40, borderRadius: "50%", background: "#12121f",
+            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 700,
+          }}>
+            {name[0].toUpperCase()}
+          </div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#111827", textAlign: "center" }}>
+            {name}
+          </div>
+          {revealed ? (
+            voted ? (
+              <div style={{ fontSize: 26, fontWeight: 800, color: "#2563eb", lineHeight: 1 }}>{vote}</div>
+            ) : (
+              <div style={{ fontSize: 18, color: "#9ca3af" }}>—</div>
+            )
+          ) : (
+            <div style={{ display: "flex", gap: 3 }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  display: "inline-block", width: 5, height: 5, borderRadius: "50%",
+                  background: "#d1d5db",
+                  animation: `pulse-dot 1.4s ${i * 0.2}s infinite`,
+                }} />
+              ))}
             </div>
-          );
-        })}
+          )}
+        </div>
+
+        {/* Back */}
+        <div className="card-face back">
+          <div style={{ fontSize: 28, opacity: 0.6 }}>🂠</div>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600, letterSpacing: 0.5 }}>
+            A VOTÉ
+          </div>
+        </div>
       </div>
-
-      <style>{`@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }`}</style>
-
-      <button
-        onClick={onReveal}
-        disabled={voteCount === 0}
-        style={{
-          background: allVoted ? "#16a34a" : "#2563eb",
-          color: "#fff", border: "none", borderRadius: 8,
-          padding: "11px 24px", fontWeight: 600, fontSize: 14,
-          cursor: voteCount === 0 ? "not-allowed" : "pointer",
-          opacity: voteCount === 0 ? 0.4 : 1,
-          transition: "background 0.3s", width: "100%",
-        }}
-      >
-        {allVoted ? "✓ Tout le monde a voté — Révéler" : `Révéler maintenant (${voteCount}/${total})`}
-      </button>
     </div>
   );
 }
 
-export default function Room({ sessionId, playerName }) {
-  const [session, setSession] = useState(null);
+/* ── Main Room component ── */
+export default function Room({ code, isPO, name }) {
+  const [room, setRoom] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const ref = doc(db, "sessions", sessionId);
-    return onSnapshot(ref, (snap) => {
-      if (snap.exists()) setSession({ id: snap.id, ...snap.data() });
+    return onSnapshot(doc(db, "rooms", code), (snap) => {
+      if (snap.exists()) setRoom(snap.data());
     });
-  }, [sessionId]);
+  }, [code]);
 
-  if (!session) {
+  if (!room) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100dvh", fontFamily: "Inter, sans-serif", color: "#6b7280" }}>
-        Chargement de la session…
+        Chargement…
       </div>
     );
   }
 
-  const isAnimator = playerName === "Rodolphe";
-  const voters = (session.participants || []).filter((p) => p !== "Rodolphe");
-  const stories = session.stories || [];
-  const currentStory = stories.find((s) => s.status === "voting" || s.status === "revealed") ?? null;
-  const currentIndex = currentStory ? stories.findIndex((s) => s.id === currentStory.id) : -1;
-  const revealed = currentStory?.status === "revealed";
-  const myVote = currentStory?.votes?.[playerName];
-  const doneStories = stories.filter((s) => s.status === "done");
+  const participants = room.participants || {};
+  const votes = room.votes || {};
+  const revealed = room.revealed || false;
+  const status = room.status || "waiting";
+  const joinedPlayers = Object.entries(participants).filter(([, p]) => p.joined);
+  const myData = participants[name];
+  const hasVoted = myData?.voted ?? false;
+  const voteCount = Object.keys(votes).length;
+  const results = revealed && voteCount > 0 ? computeResult(votes) : null;
 
-  async function addStory(name) {
-    const newStory = { id: `story_${Date.now()}`, name, status: "voting", votes: {}, average: null, recommendation: null, needsDiscussion: false };
-    await updateDoc(doc(db, "sessions", sessionId), { stories: [...stories, newStory] });
+  const shareUrl = `${window.location.origin}/room/${code}`;
+
+  /* ── PO actions ── */
+  async function startStory(storyName) {
+    const resetVoted = {};
+    Object.keys(participants).forEach((n) => {
+      resetVoted[`participants.${n}.voted`] = false;
+    });
+    await updateDoc(doc(db, "rooms", code), {
+      currentStory: storyName,
+      status: "voting",
+      votes: {},
+      revealed: false,
+      ...resetVoted,
+    });
   }
 
-  async function vote(value) {
-    if (!currentStory || revealed) return;
-    const updated = stories.map((s, i) => i === currentIndex ? { ...s, votes: { ...s.votes, [playerName]: value } } : s);
-    await updateDoc(doc(db, "sessions", sessionId), { stories: updated });
+  async function reveal() {
+    await updateDoc(doc(db, "rooms", code), { revealed: true, status: "revealed" });
   }
 
-  async function revealVotes() {
-    if (!currentStory || !isAnimator) return;
-    const { average, recommendation, needsDiscussion } = computeResult(currentStory.votes || {});
-    const updated = stories.map((s, i) => i === currentIndex ? { ...s, status: "revealed", average, recommendation, needsDiscussion } : s);
-    await updateDoc(doc(db, "sessions", sessionId), { stories: updated });
+  async function nextStory() {
+    const resetVoted = {};
+    Object.keys(participants).forEach((n) => {
+      resetVoted[`participants.${n}.voted`] = false;
+    });
+    await updateDoc(doc(db, "rooms", code), {
+      currentStory: "",
+      status: "waiting",
+      votes: {},
+      revealed: false,
+      ...resetVoted,
+    });
   }
 
-  async function markDone() {
-    if (!currentStory || !isAnimator) return;
-    const updated = stories.map((s, i) => i === currentIndex ? { ...s, status: "done" } : s);
-    await updateDoc(doc(db, "sessions", sessionId), { stories: updated });
+  /* ── Participant vote ── */
+  async function castVote(value) {
+    if (hasVoted || revealed || status !== "voting") return;
+    await updateDoc(doc(db, "rooms", code), {
+      [`participants.${name}.voted`]: true,
+      [`votes.${name}`]: value,
+    });
   }
-
-  const shareUrl = `${window.location.origin}/room/${sessionId}`;
 
   return (
     <div className="app-shell">
       {/* Mobile topbar */}
       <div className="topbar">
-        <span className="topbar-title">{session.title}</span>
+        <span className="topbar-title">{code}</span>
         <button className="burger" onClick={() => setSidebarOpen(true)} aria-label="Menu">
           <span /><span /><span />
         </button>
@@ -162,22 +146,42 @@ export default function Room({ sessionId, playerName }) {
         <a href="/" style={{ color: "#fff", fontWeight: 700, fontSize: 16, textDecoration: "none", marginBottom: 4, display: "block" }}>
           Poker Planning
         </a>
-        <div style={{ color: "#9999bb", fontSize: 12, marginBottom: 24 }}>{session.title}</div>
+        <div style={{ color: "#9999bb", fontSize: 12, marginBottom: 24 }}>
+          Room <strong style={{ color: "#fff", letterSpacing: 1 }}>{code}</strong>
+        </div>
 
-        {voters.length > 0 && (
+        {/* Connected participants */}
+        {joinedPlayers.length > 0 && (
           <>
             <div style={{ color: "#9999bb", fontSize: 11, fontWeight: 600, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
-              Participants
+              Connectés ({joinedPlayers.length})
             </div>
-            <PlayersList players={voters} votes={currentStory?.votes || {}} revealed={revealed} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 24 }}>
+              {joinedPlayers.map(([playerName, data]) => (
+                <div key={playerName} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "7px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)",
+                }}>
+                  <span style={{ fontSize: 13, color: "#d1d5db" }}>{playerName}</span>
+                  {revealed && votes[playerName] !== undefined ? (
+                    <span style={{ background: "#2563eb", color: "#fff", padding: "1px 8px", borderRadius: 999, fontSize: 12, fontWeight: 700 }}>
+                      {votes[playerName]}
+                    </span>
+                  ) : data.voted ? (
+                    <span style={{ color: "#4ade80", fontSize: 11 }}>✓</span>
+                  ) : (
+                    <span style={{ color: "#6b7280", fontSize: 11 }}>…</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </>
         )}
 
-        <div style={{ marginTop: "auto", paddingTop: 20 }}>
+        <div style={{ marginTop: "auto" }}>
           <div style={{ color: "#9999bb", fontSize: 11, marginBottom: 6 }}>Lien de partage</div>
           <input
-            readOnly
-            value={shareUrl}
+            readOnly value={shareUrl}
             onClick={(e) => { e.target.select(); navigator.clipboard.writeText(shareUrl); }}
             title="Cliquer pour copier"
             style={{
@@ -191,110 +195,120 @@ export default function Room({ sessionId, playerName }) {
 
       {/* Main */}
       <main className="main">
-        <div style={{ fontSize: 13, color: "#9ca3af", marginBottom: 16 }}>
-          <a href="/" style={{ color: "#9ca3af", textDecoration: "none" }}>Accueil</a>
-          {" > "}{session.title}
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>{session.title}</h1>
-          <span style={{ fontSize: 13, color: "#6b7280" }}>
-            Connecté en tant que <strong>{playerName}</strong>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 4 }}>
+              <a href="/" style={{ color: "#9ca3af", textDecoration: "none" }}>Accueil</a> › Room {code}
+            </div>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: 0 }}>
+              {room.currentStory || (isPO ? "Aucune story en cours" : "En attente du PO…")}
+            </h1>
+          </div>
+          <span style={{
+            fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 999,
+            background: status === "voting" ? "#dbeafe" : status === "revealed" ? "#dcfce7" : "#f3f4f6",
+            color: status === "voting" ? "#2563eb" : status === "revealed" ? "#16a34a" : "#6b7280",
+          }}>
+            {status === "voting" ? "Vote en cours" : status === "revealed" ? "Votes révélés" : "En attente"}
           </span>
         </div>
 
-        {isAnimator && !currentStory && <StoryInput onAdd={addStory} disabled={false} />}
+        {/* PO: add story */}
+        {isPO && status === "waiting" && (
+          <StoryInput onAdd={startStory} disabled={false} />
+        )}
 
-        {currentStory ? (
-          <div style={{ background: "#fff", borderRadius: 10, padding: "20px 22px", border: "1px solid #e5e7eb", marginBottom: 24 }}>
-            <div style={{ fontSize: 11, color: "#9ca3af", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-              User story en cours
+        {/* Participant cards grid */}
+        {joinedPlayers.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>
+              Participants
             </div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "#111827", marginBottom: 20 }}>
-              {currentStory.name}
-            </div>
-
-            {!isAnimator && !revealed && (
-              <>
-                <VoteCards onVote={vote} selectedVote={myVote} disabled={false} />
-                {myVote !== undefined && (
-                  <div style={{ fontSize: 13, color: "#6b7280", marginTop: 10 }}>
-                    Vote enregistré : <strong>{myVote}</strong> — tu peux encore changer.
-                  </div>
-                )}
-              </>
-            )}
-
-            {!isAnimator && revealed && (
-              <div style={{ fontSize: 14, color: "#6b7280" }}>
-                Votes révélés — en attente de la décision de l'animateur.
-              </div>
-            )}
-
-            {isAnimator && !revealed && (
-              <VotingTracker players={voters} votes={currentStory.votes || {}} onReveal={revealVotes} />
-            )}
-
-            {revealed && (
-              <>
-                <Results
-                  average={currentStory.average}
-                  recommendation={currentStory.recommendation}
-                  needsDiscussion={currentStory.needsDiscussion}
-                  votes={currentStory.votes}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+              {joinedPlayers.map(([playerName, data]) => (
+                <ParticipantCard
+                  key={playerName}
+                  name={playerName}
+                  voted={data.voted}
+                  revealed={revealed}
+                  vote={votes[playerName]}
                 />
-                {isAnimator && (
-                  <button
-                    onClick={markDone}
-                    style={{
-                      marginTop: 16, background: "#16a34a", color: "#fff",
-                      border: "none", borderRadius: 8, padding: "10px 24px",
-                      fontWeight: 600, fontSize: 14, cursor: "pointer", width: "100%",
-                    }}
-                  >
-                    Valider et passer à la suite →
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        ) : (
-          <div style={{
-            background: "#fff", borderRadius: 10, padding: "32px",
-            border: "1px solid #e5e7eb", textAlign: "center", color: "#9ca3af", fontSize: 14, marginBottom: 24,
-          }}>
-            {isAnimator ? "Ajoutez une user story ci-dessus pour démarrer le vote." : "En attente de la prochaine user story…"}
+              ))}
+            </div>
           </div>
         )}
 
-        {doneStories.length > 0 && (
-          <div>
-            <h2 style={{ fontSize: 14, fontWeight: 700, color: "#374151", marginBottom: 10 }}>
-              Stories terminées ({doneStories.length})
-            </h2>
-            {doneStories.map((s) => (
-              <div key={s.id} style={{
-                background: "#fff", borderRadius: 8, padding: "12px 16px",
-                border: "1px solid #e5e7eb", marginBottom: 8,
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
-              }}>
-                <span style={{ fontSize: 14, color: "#374151", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {s.name}
-                </span>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-                  <span style={{ fontSize: 13, color: "#6b7280" }}>Moy. {s.average}</span>
-                  <span style={{ background: "#dcfce7", color: "#16a34a", padding: "2px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600 }}>
-                    → {s.recommendation}
-                  </span>
-                  {s.needsDiscussion && (
-                    <span style={{ background: "#fef3c7", color: "#d97706", padding: "2px 8px", borderRadius: 999, fontSize: 12, fontWeight: 600 }}>
-                      ⚠️
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+        {joinedPlayers.length === 0 && (
+          <div style={{
+            background: "#fff", borderRadius: 10, padding: "32px", border: "1px solid #e5e7eb",
+            textAlign: "center", color: "#9ca3af", fontSize: 14, marginBottom: 24,
+          }}>
+            En attente des participants… Partagez le lien de la room.
           </div>
+        )}
+
+        {/* Participant: vote cards */}
+        {!isPO && status === "voting" && !hasVoted && (
+          <div style={{ background: "#fff", borderRadius: 10, padding: "20px 22px", border: "1px solid #e5e7eb", marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 16 }}>
+              Votre vote pour <em>{room.currentStory}</em>
+            </div>
+            <VoteCards onVote={castVote} selectedVote={undefined} disabled={false} />
+          </div>
+        )}
+
+        {!isPO && status === "voting" && hasVoted && (
+          <div style={{ background: "#f0fdf4", borderRadius: 10, padding: "16px 22px", border: "1px solid #86efac", marginBottom: 20, fontSize: 14, color: "#15803d", fontWeight: 600 }}>
+            ✓ Vote enregistré — en attente des autres participants
+          </div>
+        )}
+
+        {/* PO: reveal controls */}
+        {isPO && status === "voting" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>
+              {voteCount} / {joinedPlayers.length} vote{voteCount > 1 ? "s" : ""} reçu{voteCount > 1 ? "s" : ""}
+            </div>
+            <button
+              onClick={reveal}
+              disabled={voteCount === 0}
+              style={{
+                background: voteCount === joinedPlayers.length ? "#16a34a" : "#2563eb",
+                color: "#fff", border: "none", borderRadius: 8,
+                padding: "10px 22px", fontWeight: 600, fontSize: 14,
+                cursor: voteCount === 0 ? "not-allowed" : "pointer",
+                opacity: voteCount === 0 ? 0.4 : 1,
+                transition: "background 0.3s",
+              }}
+            >
+              {voteCount === joinedPlayers.length ? "✓ Révéler tous les votes" : `Révéler (${voteCount}/${joinedPlayers.length})`}
+            </button>
+          </div>
+        )}
+
+        {/* Results */}
+        {revealed && results && (
+          <>
+            <Results
+              average={results.average}
+              recommendation={results.recommendation}
+              needsDiscussion={results.needsDiscussion}
+              votes={votes}
+            />
+            {isPO && (
+              <button
+                onClick={nextStory}
+                style={{
+                  marginTop: 16, background: "#16a34a", color: "#fff",
+                  border: "none", borderRadius: 8, padding: "11px 24px",
+                  fontWeight: 600, fontSize: 14, cursor: "pointer", width: "100%",
+                }}
+              >
+                Story suivante →
+              </button>
+            )}
+          </>
         )}
       </main>
     </div>
