@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, arrayUnion, serverTimestamp } from "firebase/firestore";
 import { db, computeResult } from "../firebase";
 import VoteCards from "./VoteCards";
 import Results from "./Results";
@@ -59,12 +59,38 @@ function ParticipantCard({ name, voted, revealed, vote }) {
 export default function Room({ code, isPO, name }) {
   const [room, setRoom] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [finalEstimate, setFinalEstimate] = useState("");
 
   useEffect(() => {
     return onSnapshot(doc(db, "rooms", code), (snap) => {
       if (snap.exists()) setRoom(snap.data());
     });
   }, [code]);
+
+  // Presence: heartbeat toutes les 25s, offline sur beforeunload
+  useEffect(() => {
+    if (isPO) return;
+    const ref = doc(db, "rooms", code);
+
+    async function setOnline() {
+      await updateDoc(ref, {
+        [`participants.${name}.online`]: true,
+        [`participants.${name}.lastSeen`]: serverTimestamp(),
+      });
+    }
+    async function setOffline() {
+      await updateDoc(ref, { [`participants.${name}.online`]: false });
+    }
+
+    setOnline();
+    const hb = setInterval(setOnline, 25000);
+    window.addEventListener("beforeunload", setOffline);
+    return () => {
+      clearInterval(hb);
+      window.removeEventListener("beforeunload", setOffline);
+      setOffline();
+    };
+  }, [code, name, isPO]);
 
   if (!room) {
     return (
@@ -78,7 +104,17 @@ export default function Room({ code, isPO, name }) {
   const votes = room.votes || {};
   const revealed = room.revealed || false;
   const status = room.status || "waiting";
-  const joinedPlayers = Object.entries(participants).filter(([, p]) => p.joined);
+
+  function isOnline(p) {
+    if (p.online === false) return false;
+    if (!p.lastSeen) return true;
+    const ms = p.lastSeen.toDate?.().getTime() ?? Date.now();
+    return Date.now() - ms < 60000;
+  }
+
+  const allJoined = Object.entries(participants).filter(([, p]) => p.joined);
+  const joinedPlayers = allJoined.filter(([, p]) => isOnline(p));
+  const offlinePlayers = allJoined.filter(([, p]) => !isOnline(p));
   const myData = participants[name];
   const hasVoted = myData?.voted ?? false;
   const voteCount = Object.keys(votes).length;
@@ -117,6 +153,32 @@ export default function Room({ code, isPO, name }) {
       revealed: false,
       ...resetVoted,
     });
+  }
+
+  async function validateAndNext() {
+    const estimate = parseInt(finalEstimate, 10);
+    if (isNaN(estimate) || estimate < 1) return;
+    const historyEntry = {
+      story: room.currentStory,
+      estimate,
+      average: results?.average ?? null,
+      recommendation: results?.recommendation ?? null,
+      needsDiscussion: results?.needsDiscussion ?? false,
+      votes: { ...votes },
+    };
+    const resetVoted = {};
+    Object.keys(participants).forEach((n) => {
+      resetVoted[`participants.${n}.voted`] = false;
+    });
+    await updateDoc(doc(db, "rooms", code), {
+      history: arrayUnion(historyEntry),
+      currentStory: "",
+      status: "waiting",
+      votes: {},
+      revealed: false,
+      ...resetVoted,
+    });
+    setFinalEstimate("");
   }
 
   /* ── Participant vote ── */
@@ -176,6 +238,22 @@ export default function Room({ code, isPO, name }) {
               ))}
             </div>
           </>
+        )}
+
+        {offlinePlayers.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: "#6b7280", fontSize: 11, fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+              Déconnectés
+            </div>
+            {offlinePlayers.map(([playerName]) => (
+              <div key={playerName} style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "6px 10px", borderRadius: 8, opacity: 0.45,
+              }}>
+                <span style={{ fontSize: 13, color: "#6b7280", textDecoration: "line-through" }}>{playerName}</span>
+              </div>
+            ))}
+          </div>
         )}
 
         <div style={{ marginTop: "auto" }}>
@@ -296,19 +374,83 @@ export default function Room({ code, isPO, name }) {
               needsDiscussion={results.needsDiscussion}
               votes={votes}
             />
+
+            {/* PO: chiffrage final */}
             {isPO && (
-              <button
-                onClick={nextStory}
-                style={{
-                  marginTop: 16, background: "#16a34a", color: "#fff",
-                  border: "none", borderRadius: 8, padding: "11px 24px",
-                  fontWeight: 600, fontSize: 14, cursor: "pointer", width: "100%",
-                }}
-              >
-                Story suivante →
-              </button>
+              <div style={{
+                background: "#fff", borderRadius: 10, padding: "20px 22px",
+                border: "1px solid #e5e7eb", marginTop: 16,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 12 }}>
+                  Chiffrage final retenu par l'équipe
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={finalEstimate}
+                    onChange={(e) => setFinalEstimate(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && validateAndNext()}
+                    placeholder={results.recommendation}
+                    autoFocus
+                    style={{
+                      flex: 1, padding: "10px 14px", borderRadius: 8,
+                      border: "1.5px solid #e5e7eb", fontSize: 20, fontWeight: 700,
+                      textAlign: "center", outline: "none", width: 0,
+                    }}
+                  />
+                  <button
+                    onClick={validateAndNext}
+                    disabled={!finalEstimate || isNaN(parseInt(finalEstimate, 10))}
+                    style={{
+                      background: "#16a34a", color: "#fff", border: "none", borderRadius: 8,
+                      padding: "10px 22px", fontWeight: 600, fontSize: 14, cursor: "pointer",
+                      opacity: !finalEstimate ? 0.4 : 1, whiteSpace: "nowrap",
+                    }}
+                  >
+                    Valider →
+                  </button>
+                </div>
+              </div>
             )}
           </>
+        )}
+
+        {/* Historique des stories */}
+        {(room.history || []).length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <div style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>
+              Historique de la session ({room.history.length})
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {room.history.map((entry, i) => (
+                <div key={i} style={{
+                  background: "#fff", borderRadius: 8, padding: "12px 16px",
+                  border: "1px solid #e5e7eb",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {entry.story}
+                    </div>
+                    {entry.average !== null && (
+                      <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                        Moy. {entry.average} · Reco. {entry.recommendation}
+                        {entry.needsDiscussion && " · ⚠️ discussion"}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{
+                    background: "#12121f", color: "#fff", borderRadius: 8,
+                    padding: "4px 14px", fontSize: 18, fontWeight: 800, flexShrink: 0,
+                  }}>
+                    {entry.estimate}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </main>
     </div>

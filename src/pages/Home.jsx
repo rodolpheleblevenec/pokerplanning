@@ -66,6 +66,8 @@ export default function Home() {
     setStep(toStep);
   }
 
+  const mySessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
+
   async function handleCreate() {
     if (pin !== ADMIN_PIN) { setPinError("Code PIN incorrect"); return; }
     setLoading(true);
@@ -81,6 +83,9 @@ export default function Home() {
         createdAt: serverTimestamp(),
       });
       localStorage.setItem(`poker_room_${code}_role`, "po");
+      const sessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
+      sessions.unshift({ code, createdAt: new Date().toISOString() });
+      localStorage.setItem("poker_my_sessions", JSON.stringify(sessions.slice(0, 30)));
       navigate(`/room/${code}`);
     } finally {
       setLoading(false);
@@ -143,25 +148,38 @@ export default function Home() {
 
         {/* Step: landing */}
         {step === "landing" && (
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              onClick={() => setStep("create-pin")}
-              style={{
-                flex: 1, padding: "14px 0", background: "#12121f", color: "#fff",
-                border: "none", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
-              }}
-            >
-              Créer une room
-            </button>
-            <button
-              onClick={() => setStep("join-code")}
-              style={{
-                flex: 1, padding: "14px 0", background: "#fff", color: "#111827",
-                border: "2px solid #e5e7eb", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
-              }}
-            >
-              Rejoindre
-            </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setStep("create-pin")}
+                style={{
+                  flex: 1, padding: "14px 0", background: "#12121f", color: "#fff",
+                  border: "none", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
+                }}
+              >
+                Créer une room
+              </button>
+              <button
+                onClick={() => setStep("join-code")}
+                style={{
+                  flex: 1, padding: "14px 0", background: "#fff", color: "#111827",
+                  border: "2px solid #e5e7eb", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
+                }}
+              >
+                Rejoindre
+              </button>
+            </div>
+            {mySessions.length > 0 && (
+              <button
+                onClick={() => setStep("sessions")}
+                style={{
+                  width: "100%", padding: "11px 0", background: "#f4f5f9", color: "#6b7280",
+                  border: "none", borderRadius: 10, fontWeight: 500, fontSize: 13, cursor: "pointer",
+                }}
+              >
+                Mes sessions ({mySessions.length})
+              </button>
+            )}
           </div>
         )}
 
@@ -241,6 +259,39 @@ export default function Home() {
             >
               {loading ? "Vérification…" : "Continuer →"}
             </button>
+          </div>
+        )}
+
+        {/* Step: mes sessions */}
+        {step === "sessions" && (
+          <div>
+            <BackButton onClick={() => reset("landing")} />
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Mes sessions</h2>
+            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
+              Cliquez sur une session pour retrouver l'historique des chiffrages.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {mySessions.map((s) => {
+                const date = new Date(s.createdAt).toLocaleDateString("fr-FR", {
+                  day: "2-digit", month: "2-digit", year: "numeric",
+                });
+                return (
+                  <button
+                    key={s.code}
+                    onClick={() => navigate(`/room/${s.code}`)}
+                    style={{
+                      padding: "12px 16px", background: "#fff", color: "#111827",
+                      border: "1.5px solid #e5e7eb", borderRadius: 8,
+                      fontSize: 14, textAlign: "left", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    }}
+                  >
+                    <span style={{ fontWeight: 700, letterSpacing: 1, color: "#111827" }}>{s.code}</span>
+                    <span style={{ fontSize: 12, color: "#9ca3af" }}>{date}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
