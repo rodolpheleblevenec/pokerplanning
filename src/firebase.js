@@ -1,51 +1,39 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
+/*
+STRUCTURE FIRESTORE
+
+rooms/{code}
+  createdBy: "Rodolphe"
+  status: "waiting" | "voting" | "revealed" | "closed"
+  currentStory: string
+  participants: { [name]: { voted: bool, joined: bool, online: bool, lastSeen: timestamp } }
+  votes: { [name]: number }
+  history: [{ story, estimate, average, recommendation, needsDiscussion, votes }]
+  revealed: bool
+  createdAt: timestamp
+  closedAt: timestamp (optionnel)
+*/
+
 const firebaseConfig = {
-  apiKey: "AIzaSyBv0Fr_hMO0cQuoCuQNUSZaGhOCzB4ONXQ",
-  authDomain: "pokerplanning-495508.firebaseapp.com",
-  projectId: "pokerplanning-495508",
-  storageBucket: "pokerplanning-495508.firebasestorage.app",
-  messagingSenderId: "866295040752",
-  appId: "1:866295040752:web:8bc9935299410d2264d035",
-  measurementId: "G-RT4EYW8LVQ"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
-/*
-STRUCTURE FIRESTORE
-
-sessions/                          <- collection principale
-  {sessionId}/                     <- document par session
-    title: "Refinement 06/05/2026"
-    createdAt: timestamp
-    status: "active" | "closed"
-    stories: [                     <- tableau dans le document
-      {
-        id: "story_1"
-        name: "En tant qu'utilisateur..."
-        status: "voting" | "revealed" | "done"
-        votes: {
-          Djamal: 5,
-          Nicolas: 8,
-          Moez: 3
-        }
-        average: 5.3
-        recommendation: 6
-        needsDiscussion: true | false
-      }
-    ]
-*/
-
 export function computeResult(votes) {
-  const values = Object.values(votes);
-  if (values.length === 0) return { average: 0, recommendation: 0, needsDiscussion: false };
-
-  const average = values.reduce((sum, v) => sum + v, 0) / values.length;
+  const values = Object.values(votes).filter((v) => typeof v === "number");
+  if (values.length === 0) return { average: null, recommendation: null, needsDiscussion: false };
+  const average = values.reduce((s, v) => s + v, 0) / values.length;
   const recommendation = Math.ceil(average);
   const needsDiscussion = Math.max(...values) - Math.min(...values) > 3;
-
   return { average: Math.round(average * 10) / 10, recommendation, needsDiscussion };
 }

@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
+import { useToast } from "../components/Toast";
 import "../layout.css";
 
-const ADMIN_PIN = "1234"; // Modifier ici pour changer le PIN
+const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN ?? "1234";
 
 const WORDS = [
   "JARDIN", "SOLEIL", "MAISON", "CHEMIN", "MOUTON", "CANARD", "CHEVAL", "PIERRE",
@@ -28,11 +29,12 @@ function randomCode() {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
-function Avatar({ name, size = 36 }) {
+function Avatar({ name, size = 32 }) {
   return (
     <div style={{
-      width: size, height: size, borderRadius: "50%", background: "#12121f",
-      color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+      width: size, height: size, borderRadius: "50%",
+      background: "#1e3a5f", color: "#93c5fd",
+      display: "flex", alignItems: "center", justifyContent: "center",
       fontSize: size * 0.38, fontWeight: 700, flexShrink: 0,
     }}>
       {name[0].toUpperCase()}
@@ -40,19 +42,24 @@ function Avatar({ name, size = 36 }) {
   );
 }
 
-function BackButton({ onClick }) {
+function BackBtn({ onClick }) {
   return (
     <button onClick={onClick} style={{
-      background: "none", border: "none", color: "#6b7280", fontSize: 13,
-      cursor: "pointer", padding: "0 0 20px", display: "flex", alignItems: "center", gap: 6,
+      background: "none", border: "none", color: "#6b7280", fontSize: 12,
+      cursor: "pointer", padding: "0 0 16px", display: "flex", alignItems: "center", gap: 4,
+      fontFamily: "inherit",
     }}>
-      ← Retour
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+      Retour
     </button>
   );
 }
 
 export default function Home() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [step, setStep] = useState("landing");
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState("");
@@ -60,13 +67,11 @@ export default function Home() {
   const [roomError, setRoomError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function reset(toStep) {
-    setPin(""); setPinError("");
-    setRoomCode(""); setRoomError("");
-    setStep(toStep);
-  }
-
   const mySessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
+
+  function reset(toStep) {
+    setPin(""); setPinError(""); setRoomCode(""); setRoomError(""); setStep(toStep);
+  }
 
   async function handleCreate() {
     if (pin !== ADMIN_PIN) { setPinError("Code PIN incorrect"); return; }
@@ -74,19 +79,16 @@ export default function Home() {
     try {
       const code = randomCode();
       await setDoc(doc(db, "rooms", code), {
-        createdBy: "Rodolphe",
-        status: "waiting",
-        currentStory: "",
-        participants: {},
-        votes: {},
-        revealed: false,
-        createdAt: serverTimestamp(),
+        createdBy: "Rodolphe", status: "waiting", currentStory: "",
+        participants: {}, votes: {}, revealed: false, createdAt: serverTimestamp(),
       });
       localStorage.setItem(`poker_room_${code}_role`, "po");
       const sessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
       sessions.unshift({ code, createdAt: new Date().toISOString() });
       localStorage.setItem("poker_my_sessions", JSON.stringify(sessions.slice(0, 30)));
       navigate(`/room/${code}`);
+    } catch {
+      toast("Erreur lors de la création. Réessaie.", "error");
     } finally {
       setLoading(false);
     }
@@ -99,8 +101,10 @@ export default function Home() {
     try {
       const snap = await getDoc(doc(db, "rooms", code));
       if (!snap.exists()) { setRoomError("Room introuvable — vérifie le code"); return; }
-      setRoomError("");
-      setStep("join-name");
+      if (snap.data().status === "closed") { setRoomError("Cette session est terminée"); return; }
+      setRoomError(""); setStep("join-name");
+    } catch {
+      toast("Erreur réseau — vérifie ta connexion.", "error");
     } finally {
       setLoading(false);
     }
@@ -115,6 +119,8 @@ export default function Home() {
       });
       localStorage.setItem(`poker_room_${code}_name`, name);
       navigate(`/room/${code}`);
+    } catch {
+      toast("Impossible de rejoindre. Réessaie.", "error");
     } finally {
       setLoading(false);
     }
@@ -123,74 +129,53 @@ export default function Home() {
   return (
     <div style={{
       display: "flex", height: "100dvh", alignItems: "center", justifyContent: "center",
-      background: "#f4f5f9", fontFamily: "Inter, system-ui, sans-serif", padding: "0 16px",
+      background: "#f3f4f6", fontFamily: "Inter, system-ui, sans-serif", padding: "0 16px",
     }}>
       <div style={{
-        background: "#fff", borderRadius: 16, padding: "40px 40px",
-        boxShadow: "0 4px 32px rgba(0,0,0,0.08)", width: "100%", maxWidth: 380,
+        background: "#fff", borderRadius: 12, padding: "36px 36px",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.07)", width: "100%", maxWidth: 380,
+        border: "1px solid #e5e7eb",
       }}>
         {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 36 }}>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{
-            width: 52, height: 52, background: "#12121f", borderRadius: 14,
+            width: 48, height: 48, background: "#111827", borderRadius: 10,
             display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 14px", fontSize: 24,
-          }}>
-            🃏
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+            margin: "0 auto 12px", fontSize: 22,
+          }}>🃏</div>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
             Poker Planning
           </h1>
-          <p style={{ fontSize: 13, color: "#9ca3af", margin: 0 }}>
-            Sessions de refinement en équipe
+          <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>
+            Sessions de refinement agile
           </p>
         </div>
 
-        {/* Step: landing */}
+        {/* Landing */}
         {step === "landing" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setStep("create-pin")}
-                style={{
-                  flex: 1, padding: "14px 0", background: "#12121f", color: "#fff",
-                  border: "none", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
-                }}
-              >
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary" onClick={() => setStep("create-pin")} style={{ flex: 1 }}>
                 Créer une room
               </button>
-              <button
-                onClick={() => setStep("join-code")}
-                style={{
-                  flex: 1, padding: "14px 0", background: "#fff", color: "#111827",
-                  border: "2px solid #e5e7eb", borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: "pointer",
-                }}
-              >
+              <button className="btn btn-ghost" onClick={() => setStep("join-code")} style={{ flex: 1 }}>
                 Rejoindre
               </button>
             </div>
             {mySessions.length > 0 && (
-              <button
-                onClick={() => setStep("sessions")}
-                style={{
-                  width: "100%", padding: "11px 0", background: "#f4f5f9", color: "#6b7280",
-                  border: "none", borderRadius: 10, fontWeight: 500, fontSize: 13, cursor: "pointer",
-                }}
-              >
+              <button className="btn btn-ghost" onClick={() => setStep("sessions")} style={{ width: "100%", fontSize: 12, color: "#6b7280" }}>
                 Mes sessions ({mySessions.length})
               </button>
             )}
           </div>
         )}
 
-        {/* Step: PIN */}
+        {/* PIN */}
         {step === "create-pin" && (
           <div>
-            <BackButton onClick={() => reset("landing")} />
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Code PIN</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
-              Entrez le code PIN pour créer une room.
-            </p>
+            <BackBtn onClick={() => reset("landing")} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Code PIN</p>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>Entrez le PIN pour créer une room.</p>
             <input
               type="password"
               inputMode="numeric"
@@ -201,36 +186,27 @@ export default function Home() {
               placeholder="••••"
               autoFocus
               style={{
-                width: "100%", padding: "12px", borderRadius: 8,
-                border: `1.5px solid ${pinError ? "#ef4444" : "#e5e7eb"}`,
-                fontSize: 22, letterSpacing: 10, textAlign: "center",
-                outline: "none", marginBottom: 6,
+                width: "100%", padding: "12px", borderRadius: 7,
+                border: `1px solid ${pinError ? "#dc2626" : "#e5e7eb"}`,
+                fontSize: 24, letterSpacing: 12, textAlign: "center",
+                outline: "none", marginBottom: pinError ? 6 : 16,
+                fontFamily: "inherit", color: "#111827",
               }}
             />
-            {pinError && <p style={{ color: "#ef4444", fontSize: 12, margin: "0 0 10px" }}>{pinError}</p>}
-            <button
-              onClick={handleCreate}
-              disabled={pin.length !== 4 || loading}
-              style={{
-                width: "100%", marginTop: 16, padding: "12px", background: "#2563eb", color: "#fff",
-                border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14,
-                cursor: pin.length !== 4 || loading ? "not-allowed" : "pointer",
-                opacity: pin.length !== 4 || loading ? 0.5 : 1,
-              }}
-            >
+            {pinError && <p style={{ color: "#dc2626", fontSize: 12, margin: "0 0 12px" }}>{pinError}</p>}
+            <button className="btn btn-primary" onClick={handleCreate}
+              disabled={pin.length !== 4 || loading} style={{ width: "100%" }}>
               {loading ? "Création…" : "Créer la room"}
             </button>
           </div>
         )}
 
-        {/* Step: room code */}
+        {/* Room code */}
         {step === "join-code" && (
           <div>
-            <BackButton onClick={() => reset("landing")} />
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Code de la room</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
-              Entrez le code à 6 lettres communiqué par le PO.
-            </p>
+            <BackBtn onClick={() => reset("landing")} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Code de la room</p>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>6 lettres communiquées par le PO.</p>
             <input
               type="text"
               maxLength={6}
@@ -240,87 +216,80 @@ export default function Home() {
               placeholder="JARDIN"
               autoFocus
               style={{
-                width: "100%", padding: "12px", borderRadius: 8,
-                border: `1.5px solid ${roomError ? "#ef4444" : "#e5e7eb"}`,
-                fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 700,
-                outline: "none", marginBottom: 6, textTransform: "uppercase",
+                width: "100%", padding: "12px", borderRadius: 7,
+                border: `1px solid ${roomError ? "#dc2626" : "#e5e7eb"}`,
+                fontSize: 22, letterSpacing: 8, textAlign: "center", fontWeight: 700,
+                outline: "none", marginBottom: roomError ? 6 : 16,
+                fontFamily: "inherit", color: "#111827", textTransform: "uppercase",
               }}
             />
-            {roomError && <p style={{ color: "#ef4444", fontSize: 12, margin: "0 0 10px" }}>{roomError}</p>}
-            <button
-              onClick={handleJoinCode}
-              disabled={roomCode.length !== 6 || loading}
-              style={{
-                width: "100%", marginTop: 16, padding: "12px", background: "#2563eb", color: "#fff",
-                border: "none", borderRadius: 8, fontWeight: 600, fontSize: 14,
-                cursor: roomCode.length !== 6 || loading ? "not-allowed" : "pointer",
-                opacity: roomCode.length !== 6 || loading ? 0.5 : 1,
-              }}
-            >
+            {roomError && <p style={{ color: "#dc2626", fontSize: 12, margin: "0 0 12px" }}>{roomError}</p>}
+            <button className="btn btn-primary" onClick={handleJoinCode}
+              disabled={roomCode.length !== 6 || loading} style={{ width: "100%" }}>
               {loading ? "Vérification…" : "Continuer →"}
             </button>
           </div>
         )}
 
-        {/* Step: mes sessions */}
+        {/* Name selection */}
+        {step === "join-name" && (
+          <div>
+            <BackBtn onClick={() => setStep("join-code")} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Qui êtes-vous ?</p>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>
+              Room <strong style={{ color: "#111827", letterSpacing: 1 }}>{roomCode.toUpperCase()}</strong>
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {NAMES.map((n) => (
+                <button key={n} onClick={() => handleJoinName(n)} disabled={loading}
+                  style={{
+                    padding: "10px 14px", background: "#fff", color: "#111827",
+                    border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, fontWeight: 500,
+                    textAlign: "left", cursor: loading ? "not-allowed" : "pointer",
+                    display: "flex", alignItems: "center", gap: 10,
+                    opacity: loading ? 0.6 : 1, fontFamily: "inherit",
+                    transition: "border-color 0.15s, background 0.15s",
+                  }}
+                  onMouseOver={(e) => { e.currentTarget.style.borderColor = "#bfdbfe"; e.currentTarget.style.background = "#f8faff"; }}
+                  onMouseOut={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#fff"; }}
+                >
+                  <Avatar name={n} size={30} />
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sessions history */}
         {step === "sessions" && (
           <div>
-            <BackButton onClick={() => reset("landing")} />
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Mes sessions</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
-              Cliquez sur une session pour retrouver l'historique des chiffrages.
+            <BackBtn onClick={() => reset("landing")} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Mes sessions</p>
+            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>
+              Cliquez pour retrouver l'historique d'une session.
             </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {mySessions.map((s) => {
                 const date = new Date(s.createdAt).toLocaleDateString("fr-FR", {
                   day: "2-digit", month: "2-digit", year: "numeric",
                 });
                 return (
-                  <button
-                    key={s.code}
-                    onClick={() => navigate(`/room/${s.code}`)}
+                  <button key={s.code} onClick={() => navigate(`/room/${s.code}`)}
                     style={{
-                      padding: "12px 16px", background: "#fff", color: "#111827",
-                      border: "1.5px solid #e5e7eb", borderRadius: 8,
-                      fontSize: 14, textAlign: "left", cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                      padding: "10px 14px", background: "#fff", border: "1px solid #e5e7eb",
+                      borderRadius: 7, fontSize: 13, textAlign: "left", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      fontFamily: "inherit", transition: "border-color 0.15s",
                     }}
+                    onMouseOver={(e) => e.currentTarget.style.borderColor = "#bfdbfe"}
+                    onMouseOut={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
                   >
                     <span style={{ fontWeight: 700, letterSpacing: 1, color: "#111827" }}>{s.code}</span>
-                    <span style={{ fontSize: 12, color: "#9ca3af" }}>{date}</span>
+                    <span style={{ fontSize: 11, color: "#9ca3af" }}>{date}</span>
                   </button>
                 );
               })}
-            </div>
-          </div>
-        )}
-
-        {/* Step: name selection */}
-        {step === "join-name" && (
-          <div>
-            <BackButton onClick={() => setStep("join-code")} />
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: "0 0 6px" }}>Qui êtes-vous ?</h2>
-            <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
-              Room <strong>{roomCode.toUpperCase()}</strong>
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {NAMES.map((name) => (
-                <button
-                  key={name}
-                  onClick={() => handleJoinName(name)}
-                  disabled={loading}
-                  style={{
-                    padding: "11px 14px", background: "#fff", color: "#111827",
-                    border: "1.5px solid #e5e7eb", borderRadius: 8,
-                    fontSize: 14, fontWeight: 500, textAlign: "left", cursor: "pointer",
-                    display: "flex", alignItems: "center", gap: 10,
-                    opacity: loading ? 0.6 : 1,
-                  }}
-                >
-                  <Avatar name={name} size={32} />
-                  {name}
-                </button>
-              ))}
             </div>
           </div>
         )}
