@@ -60,6 +60,15 @@ export default function Room({ code, isPO, name }) {
   const [room, setRoom] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [finalEstimate, setFinalEstimate] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const shareUrl = `${window.location.origin}/room/${code}`;
+
+  function copyLink() {
+    navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   useEffect(() => {
     return onSnapshot(doc(db, "rooms", code), (snap) => {
@@ -119,8 +128,6 @@ export default function Room({ code, isPO, name }) {
   const hasVoted = myData?.voted ?? false;
   const voteCount = Object.keys(votes).length;
   const results = revealed && voteCount > 0 ? computeResult(votes) : null;
-
-  const shareUrl = `${window.location.origin}/room/${code}`;
 
   /* ── PO actions ── */
   async function startStory(storyName) {
@@ -257,17 +264,35 @@ export default function Room({ code, isPO, name }) {
         )}
 
         <div style={{ marginTop: "auto" }}>
-          <div style={{ color: "#9999bb", fontSize: 11, marginBottom: 6 }}>Lien de partage</div>
-          <input
-            readOnly value={shareUrl}
-            onClick={(e) => { e.target.select(); navigator.clipboard.writeText(shareUrl); }}
-            title="Cliquer pour copier"
+          <div style={{ color: "#9999bb", fontSize: 11, marginBottom: 8 }}>Lien de partage</div>
+          <button
+            onClick={copyLink}
             style={{
-              width: "100%", background: "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6,
-              padding: "6px 8px", fontSize: 10, color: "#9999bb", cursor: "pointer",
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              background: copied ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.07)",
+              border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.1)"}`,
+              borderRadius: 8, padding: "9px 12px", cursor: "pointer",
+              color: copied ? "#4ade80" : "#9999bb", fontSize: 13, fontWeight: 600,
+              transition: "all 0.2s",
             }}
-          />
+          >
+            {copied ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Copié !
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Copier le lien
+              </>
+            )}
+          </button>
         </div>
       </aside>
 
