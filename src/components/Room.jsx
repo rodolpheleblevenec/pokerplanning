@@ -23,14 +23,20 @@ const IconChevronLeft = () => (
     <polyline points="15 18 9 12 15 6" />
   </svg>
 );
+const IconEdit = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
 
 /* ── Participant card (flip 3D) ── */
-function ParticipantCard({ name, voted, revealed, vote }) {
+function ParticipantCard({ name, voted, revealed, vote, offline }) {
   const flipped = voted && !revealed;
   const showVote = revealed && voted;
 
   return (
-    <div className="card-flip">
+    <div className="card-flip" style={{ opacity: offline ? 0.4 : 1, transition: "opacity 0.3s" }}>
       <div className={`card-inner ${flipped ? "flipped" : ""}`}>
         {/* Front */}
         <div className={`card-face ${showVote ? "voted-revealed" : ""}`}>
@@ -173,6 +179,8 @@ export default function Room({ code, isPO, name }) {
   const [copied, setCopied] = useState(false);
   const [showClosing, setShowClosing] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [editingStory, setEditingStory] = useState(false);
+  const [editStoryVal, setEditStoryVal] = useState("");
 
   const shareUrl = `${window.location.origin}/room/${code}`;
 
@@ -191,18 +199,24 @@ export default function Room({ code, isPO, name }) {
     );
   }, [code]);
 
-  /* Presence */
+  /* Presence — heartbeat every 40s, offline only on actual page close */
   useEffect(() => {
     if (isPO) return;
     const ref = doc(db, "rooms", code);
-    const online = () => updateDoc(ref, { [`participants.${name}.online`]: true, [`participants.${name}.lastSeen`]: serverTimestamp() }).catch(() => {});
-    const offline = () => updateDoc(ref, { [`participants.${name}.online`]: false }).catch(() => {});
-    const onVis = () => document.hidden ? offline() : online();
-    online();
-    const hb = setInterval(online, 25000);
-    window.addEventListener("beforeunload", offline);
-    document.addEventListener("visibilitychange", onVis);
-    return () => { clearInterval(hb); window.removeEventListener("beforeunload", offline); document.removeEventListener("visibilitychange", onVis); offline(); };
+    const markOnline = () => updateDoc(ref, {
+      [`participants.${name}.online`]: true,
+      [`participants.${name}.lastSeen`]: serverTimestamp(),
+    }).catch(() => {});
+    const markOffline = () => updateDoc(ref, { [`participants.${name}.online`]: false }).catch(() => {});
+
+    markOnline();
+    const hb = setInterval(markOnline, 40000);
+    window.addEventListener("beforeunload", markOffline);
+    return () => {
+      clearInterval(hb);
+      window.removeEventListener("beforeunload", markOffline);
+      markOffline();
+    };
   }, [code, name, isPO]);
 
   /* Guards */
@@ -229,15 +243,25 @@ export default function Room({ code, isPO, name }) {
 
   if (status === "closed") return <ClosedView history={history} code={code} />;
 
+  /* Participant is online if lastSeen is within 2 minutes (or no lastSeen yet) */
   function isOnline(p) {
     if (p.online === false) return false;
     if (!p.lastSeen) return true;
-    return Date.now() - (p.lastSeen.toDate?.().getTime() ?? Date.now()) < 60000;
+    return Date.now() - (p.lastSeen.toDate?.().getTime() ?? Date.now()) < 120000;
   }
 
-  const allJoined = Object.entries(participants).filter(([, p]) => p.joined);
-  const joinedPlayers = allJoined.filter(([, p]) => isOnline(p));
+  /* Stable order: sort all joined participants by joinedAt timestamp */
+  const allJoined = Object.entries(participants)
+    .filter(([, p]) => p.joined)
+    .sort(([, a], [, b]) => {
+      const ta = a.joinedAt?.toDate?.().getTime() ?? 0;
+      const tb = b.joinedAt?.toDate?.().getTime() ?? 0;
+      return ta - tb;
+    });
+
+  const onlinePlayers = allJoined.filter(([, p]) => isOnline(p));
   const offlinePlayers = allJoined.filter(([, p]) => !isOnline(p));
+
   const myData = participants[name];
   const hasVoted = myData?.voted ?? false;
   const voteCount = Object.keys(votes).length;
@@ -267,6 +291,7 @@ export default function Room({ code, isPO, name }) {
       currentStory: "", status: "waiting", votes: {}, revealed: false, ...buildReset(),
     }), "Impossible de valider");
     setFinalEstimate("");
+    setEditingStory(false);
   }
 
   async function closeSession() {
@@ -274,6 +299,18 @@ export default function Room({ code, isPO, name }) {
     await run(() => updateDoc(doc(db, "rooms", code), { status: "closed", closedAt: serverTimestamp() }), "Impossible de clore");
     setClosing(false);
     setShowClosing(false);
+  }
+
+  function startEditStory() {
+    setEditStoryVal(room.currentStory);
+    setEditingStory(true);
+  }
+
+  async function saveEditStory() {
+    const trimmed = editStoryVal.trim();
+    if (!trimmed) return;
+    await run(() => updateDoc(doc(db, "rooms", code), { currentStory: trimmed }), "Impossible de modifier");
+    setEditingStory(false);
   }
 
   /* Status badge */
@@ -304,10 +341,10 @@ export default function Room({ code, isPO, name }) {
 
         {/* Participants */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          {joinedPlayers.length > 0 && (
+          {onlinePlayers.length > 0 && (
             <>
-              <div className="sidebar-section">Connectés ({joinedPlayers.length})</div>
-              {joinedPlayers.map(([pName, data]) => (
+              <div className="sidebar-section">Connectés ({onlinePlayers.length})</div>
+              {onlinePlayers.map(([pName, data]) => (
                 <div key={pName} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: 6, marginBottom: 2 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", flexShrink: 0 }} />
@@ -400,10 +437,38 @@ export default function Room({ code, isPO, name }) {
         <div className="content">
           {/* Story title */}
           <div style={{ marginBottom: 20 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: "0 0 2px" }}>
-              {room.currentStory || (isPO ? "Démarrer une story" : "En attente du PO…")}
-            </h1>
-            {room.currentStory && (
+            {editingStory ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={editStoryVal}
+                  onChange={(e) => setEditStoryVal(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") saveEditStory(); if (e.key === "Escape") setEditingStory(false); }}
+                  autoFocus
+                  className="input"
+                  style={{ fontSize: 16, fontWeight: 600, flex: 1 }}
+                />
+                <button className="btn btn-primary" onClick={saveEditStory} disabled={!editStoryVal.trim()}>OK</button>
+                <button className="btn btn-ghost" onClick={() => setEditingStory(false)}>✕</button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: 0 }}>
+                  {room.currentStory || (isPO ? "Démarrer une story" : "En attente du PO…")}
+                </h1>
+                {isPO && room.currentStory && (
+                  <button
+                    onClick={startEditStory}
+                    title="Modifier le titre"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4, display: "flex", alignItems: "center", borderRadius: 4, lineHeight: 1 }}
+                    onMouseOver={(e) => e.currentTarget.style.color = "#374151"}
+                    onMouseOut={(e) => e.currentTarget.style.color = "#9ca3af"}
+                  >
+                    <IconEdit />
+                  </button>
+                )}
+              </div>
+            )}
+            {room.currentStory && !editingStory && (
               <span style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
                 User story en cours
               </span>
@@ -423,21 +488,28 @@ export default function Room({ code, isPO, name }) {
           {/* PO: add story */}
           {isPO && status === "waiting" && <StoryInput onAdd={startStory} disabled={false} />}
 
-          {/* Participant cards */}
-          {joinedPlayers.length > 0 && (
+          {/* Participant cards — stable order, all joined (offline faded) */}
+          {allJoined.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <p style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 12px" }}>
                 Participants
               </p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                {joinedPlayers.map(([pName, data]) => (
-                  <ParticipantCard key={pName} name={pName} voted={data.voted} revealed={revealed} vote={votes[pName]} />
+                {allJoined.map(([pName, data]) => (
+                  <ParticipantCard
+                    key={pName}
+                    name={pName}
+                    voted={data.voted}
+                    revealed={revealed}
+                    vote={votes[pName]}
+                    offline={!isOnline(data)}
+                  />
                 ))}
               </div>
             </div>
           )}
 
-          {joinedPlayers.length === 0 && (
+          {allJoined.length === 0 && (
             <div className="card" style={{ textAlign: "center", color: "#9ca3af", fontSize: 13, padding: "32px", marginBottom: 20 }}>
               En attente des participants — partagez le lien de la room
             </div>
@@ -463,14 +535,14 @@ export default function Room({ code, isPO, name }) {
           {isPO && status === "voting" && (
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
               <span style={{ fontSize: 13, color: "#6b7280" }}>
-                {voteCount} / {joinedPlayers.length} vote{voteCount !== 1 ? "s" : ""} reçu{voteCount !== 1 ? "s" : ""}
+                {voteCount} / {onlinePlayers.length} vote{voteCount !== 1 ? "s" : ""} reçu{voteCount !== 1 ? "s" : ""}
               </span>
               <button
-                className={`btn ${voteCount === joinedPlayers.length && voteCount > 0 ? "btn-success" : "btn-primary"}`}
+                className={`btn ${voteCount === onlinePlayers.length && voteCount > 0 ? "btn-success" : "btn-primary"}`}
                 onClick={reveal}
                 disabled={voteCount === 0}
               >
-                {voteCount === joinedPlayers.length && voteCount > 0 ? "✓ Révéler tous les votes" : `Révéler (${voteCount}/${joinedPlayers.length})`}
+                {voteCount === onlinePlayers.length && voteCount > 0 ? "✓ Révéler tous les votes" : `Révéler (${voteCount}/${onlinePlayers.length})`}
               </button>
             </div>
           )}
@@ -501,26 +573,29 @@ export default function Room({ code, isPO, name }) {
                       style={{ flex: 1 }}>
                       Valider →
                     </button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={reVote}
+                      title="Re-voter (conserver la story)"
+                      style={{ padding: "0 12px", flexShrink: 0 }}
+                    >
+                      <IconChevronLeft />
+                    </button>
                   </div>
-                  <button className="btn btn-ghost" onClick={reVote}
-                    style={{ width: "100%", marginTop: 8, justifyContent: "center", fontSize: 12 }}>
-                    <IconChevronLeft /> Re-voter (conserver la story)
-                  </button>
                 </div>
               )}
             </>
           )}
 
-          {/* History */}
+          {/* History — newest first */}
           {history.length > 0 && (
             <div style={{ marginTop: 28 }}>
               <p style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
                 Historique ({history.length})
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {history.map((entry, i) => (
-                  <div key={i} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px" }}
-                    onMouseOver={(e) => {}} onMouseOut={(e) => {}}>
+                {[...history].reverse().map((entry, i) => (
+                  <div key={i} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.story}</div>
                       {entry.average !== null && (

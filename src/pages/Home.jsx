@@ -110,7 +110,7 @@ export default function Home() {
     setLoading(true);
     try {
       await updateDoc(doc(db, "rooms", code), {
-        [`participants.${name}`]: { voted: false, joined: true },
+        [`participants.${name}`]: { voted: false, joined: true, joinedAt: serverTimestamp() },
       });
       localStorage.setItem(`poker_room_${code}_name`, name);
       navigate(`/room/${code}`);
