@@ -250,6 +250,68 @@ html, body, #root { height: 100%; margin: 0; padding: 0; }
   );
 }
 
+/* ── Story header ── */
+.story-header { margin-bottom: 20px; }
+.story-eyebrow {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-disabled);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 3px;
+}
+.story-title { font-size: 22px; font-weight: 700; color: var(--text-primary); margin: 0; }
+
+/* ── Vote panel ── */
+.vote-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+.vote-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.vote-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #16a34a;
+}
+
+/* ── History toggle ── */
+.history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0;
+  margin-bottom: 10px;
+}
+.history-toggle:hover { color: var(--text-secondary); }
+.history-chevron { transition: transform 0.2s; }
+.history-chevron.open { transform: rotate(90deg); }
+
 /* ── Animations ── */
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }

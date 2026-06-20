@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useToast } from "../components/Toast";
+import FeaturesModal from "../components/FeaturesModal";
 import "../layout.css";
 
 const WORDS = [
@@ -62,6 +63,7 @@ export default function Home() {
   const [roomCode, setRoomCode] = useState("");
   const [roomError, setRoomError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [featuresOpen, setFeaturesOpen] = useState(false);
 
   const mySessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
 
@@ -123,7 +125,8 @@ export default function Home() {
 
   return (
     <div style={{
-      display: "flex", height: "100dvh", alignItems: "center", justifyContent: "center",
+      display: "flex", flexDirection: "column", gap: 16, height: "100dvh",
+      alignItems: "center", justifyContent: "center",
       background: "#f3f4f6", fontFamily: "Inter, system-ui, sans-serif", padding: "0 16px",
     }}>
       <div style={{
@@ -258,6 +261,19 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      <button
+        onClick={() => setFeaturesOpen(true)}
+        style={{
+          background: "none", border: "none", color: "#9ca3af", fontSize: 11,
+          cursor: "pointer", fontFamily: "inherit", padding: 4,
+          textDecoration: "underline", textUnderlineOffset: 3, opacity: 0.75,
+        }}
+      >
+        Fonctionnalités
+      </button>
+
+      <FeaturesModal open={featuresOpen} onClose={() => setFeaturesOpen(false)} />
     </div>
   );
 }

@@ -181,6 +181,7 @@ export default function Room({ code, isPO, name }) {
   const [closing, setClosing] = useState(false);
   const [editingStory, setEditingStory] = useState(false);
   const [editStoryVal, setEditStoryVal] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
 
   const shareUrl = `${window.location.origin}/room/${code}`;
 
@@ -435,8 +436,8 @@ export default function Room({ code, isPO, name }) {
 
         {/* Content */}
         <div className="content">
-          {/* Story title */}
-          <div style={{ marginBottom: 20 }}>
+          {/* Story header */}
+          <div className="story-header">
             {editingStory ? (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input
@@ -445,33 +446,31 @@ export default function Room({ code, isPO, name }) {
                   onKeyDown={(e) => { if (e.key === "Enter") saveEditStory(); if (e.key === "Escape") setEditingStory(false); }}
                   autoFocus
                   className="input"
-                  style={{ fontSize: 16, fontWeight: 600, flex: 1 }}
+                  style={{ fontSize: 18, fontWeight: 700, flex: 1 }}
                 />
                 <button className="btn btn-primary" onClick={saveEditStory} disabled={!editStoryVal.trim()}>OK</button>
                 <button className="btn btn-ghost" onClick={() => setEditingStory(false)}>✕</button>
               </div>
             ) : (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: 0 }}>
-                  {room.currentStory || (isPO ? "Démarrer une story" : "En attente du PO…")}
-                </h1>
-                {isPO && room.currentStory && (
-                  <button
-                    onClick={startEditStory}
-                    title="Modifier le titre"
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4, display: "flex", alignItems: "center", borderRadius: 4, lineHeight: 1 }}
-                    onMouseOver={(e) => e.currentTarget.style.color = "#374151"}
-                    onMouseOut={(e) => e.currentTarget.style.color = "#9ca3af"}
-                  >
-                    <IconEdit />
-                  </button>
-                )}
-              </div>
-            )}
-            {room.currentStory && !editingStory && (
-              <span style={{ fontSize: 11, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>
-                User story en cours
-              </span>
+              <>
+                <span className="story-eyebrow">{room.currentStory ? "User story en cours" : "Session"}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <h1 className="story-title">
+                    {room.currentStory || (isPO ? "Démarrer une story" : "En attente du PO…")}
+                  </h1>
+                  {isPO && room.currentStory && (
+                    <button
+                      onClick={startEditStory}
+                      title="Modifier le titre"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4, display: "flex", alignItems: "center", borderRadius: 4, lineHeight: 1 }}
+                      onMouseOver={(e) => e.currentTarget.style.color = "#374151"}
+                      onMouseOut={(e) => e.currentTarget.style.color = "#9ca3af"}
+                    >
+                      <IconEdit />
+                    </button>
+                  )}
+                </div>
+              </>
             )}
           </div>
 
@@ -515,19 +514,16 @@ export default function Room({ code, isPO, name }) {
             </div>
           )}
 
-          {/* Participant: vote cards */}
-          {!isPO && status === "voting" && !hasVoted && (
-            <div className="card" style={{ marginBottom: 16 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 14px" }}>
-                Votre vote — <em style={{ fontWeight: 400, color: "#6b7280" }}>{room.currentStory}</em>
-              </p>
-              <VoteCards onVote={castVote} selectedVote={undefined} disabled={false} />
-            </div>
-          )}
-
-          {!isPO && status === "voting" && hasVoted && (
-            <div style={{ background: "#dcfce7", border: "1px solid #bbf7d0", borderRadius: 7, padding: "10px 16px", fontSize: 13, color: "#15803d", fontWeight: 600, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-              <IconCheck /> Vote enregistré — en attente des autres participants
+          {/* Participant : vote (modifiable jusqu'à la révélation) */}
+          {!isPO && status === "voting" && (
+            <div className="vote-panel">
+              <div className="vote-panel-head">
+                <span>Ton vote</span>
+                {hasVoted
+                  ? <span className="vote-hint"><IconCheck /> Enregistré · tu peux encore changer</span>
+                  : <span style={{ fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>Choisis une carte</span>}
+              </div>
+              <VoteCards onVote={castVote} selectedVote={votes[name]} disabled={false} />
             </div>
           )}
 
@@ -587,29 +583,34 @@ export default function Room({ code, isPO, name }) {
             </>
           )}
 
-          {/* History — newest first */}
+          {/* Historique (repliable, plus récent en premier) */}
           {history.length > 0 && (
             <div style={{ marginTop: 28 }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>
+              <button className="history-toggle" onClick={() => setShowHistory((v) => !v)}>
+                <svg className={`history-chevron ${showHistory ? "open" : ""}`} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
                 Historique ({history.length})
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {[...history].reverse().map((entry, i) => (
-                  <div key={i} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px" }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.story}</div>
-                      {entry.average !== null && (
-                        <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-                          Moy. {entry.average} · Reco. {entry.recommendation}{entry.needsDiscussion && " · ⚠️"}
-                        </div>
-                      )}
+              </button>
+              {showHistory && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[...history].reverse().map((entry, i) => (
+                    <div key={i} className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 16px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.story}</div>
+                        {entry.average !== null && (
+                          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+                            Moy. {entry.average} · Reco. {entry.recommendation}{entry.needsDiscussion && " · ⚠️"}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ background: "#111827", color: "#fff", borderRadius: 6, padding: "3px 12px", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
+                        {entry.estimate}
+                      </div>
                     </div>
-                    <div style={{ background: "#111827", color: "#fff", borderRadius: 6, padding: "3px 12px", fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
-                      {entry.estimate}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
