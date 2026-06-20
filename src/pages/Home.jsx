@@ -4,7 +4,10 @@ import { doc, setDoc, getDoc, updateDoc, serverTimestamp } from "firebase/firest
 import { db } from "../firebase";
 import { useToast } from "../components/Toast";
 import FeaturesModal from "../components/FeaturesModal";
-import "../layout.css";
+import ThemeToggle from "../components/ThemeToggle";
+import Segmented from "../components/Segmented";
+import { SEQUENCES, getSequence } from "../sequences";
+import { IconArrowRight, IconChevronLeft } from "../components/Icons";
 
 const WORDS = [
   "JARDIN", "SOLEIL", "MAISON", "CHEMIN", "MOUTON", "CANARD", "CHEVAL", "PIERRE",
@@ -22,36 +25,23 @@ const WORDS = [
   "VOLCAN",
 ];
 
-const NAMES = ["Djamal", "Nicolas", "Moez", "Paul", "Malek", "Autre"];
-
 function randomCode() {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
-function Avatar({ name, size = 32 }) {
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: "50%",
-      background: "#1e3a5f", color: "#93c5fd",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: size * 0.38, fontWeight: 700, flexShrink: 0,
-    }}>
-      {name[0].toUpperCase()}
-    </div>
-  );
+// Caractères interdits dans une clé de champ Firestore (chemin pointé)
+function cleanName(v) {
+  return v.replace(/[.#$/[\]~*`]/g, "").slice(0, 20);
 }
 
 function BackBtn({ onClick }) {
   return (
-    <button onClick={onClick} style={{
-      background: "none", border: "none", color: "#6b7280", fontSize: 12,
-      cursor: "pointer", padding: "0 0 16px", display: "flex", alignItems: "center", gap: 4,
-      fontFamily: "inherit",
-    }}>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="15 18 9 12 15 6" />
-      </svg>
-      Retour
+    <button
+      onClick={onClick}
+      className="btn btn-ghost btn-sm"
+      style={{ padding: "4px 6px", marginBottom: 14, marginLeft: -6, gap: 4 }}
+    >
+      <IconChevronLeft size={14} /> Retour
     </button>
   );
 }
@@ -59,27 +49,39 @@ function BackBtn({ onClick }) {
 export default function Home() {
   const navigate = useNavigate();
   const toast = useToast();
+
   const [step, setStep] = useState("landing");
+  const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // Création
+  const [poName, setPoName] = useState("");
+  const [sequence, setSequence] = useState("fib");
+
+  // Rejoindre
   const [roomCode, setRoomCode] = useState("");
   const [roomError, setRoomError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [featuresOpen, setFeaturesOpen] = useState(false);
+  const [joinData, setJoinData] = useState(null);
+  const [joinName, setJoinName] = useState("");
 
   const mySessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
 
   function reset(toStep) {
-    setRoomCode(""); setRoomError(""); setStep(toStep);
+    setRoomCode(""); setRoomError(""); setJoinName(""); setJoinData(null); setStep(toStep);
   }
 
   async function handleCreate() {
+    const name = poName.trim();
+    if (!name) return;
     setLoading(true);
     try {
       const code = randomCode();
       await setDoc(doc(db, "rooms", code), {
-        createdBy: "Rodolphe", status: "waiting", currentStory: "",
+        createdBy: name, status: "waiting", currentStory: "", sequence,
         participants: {}, votes: {}, revealed: false, createdAt: serverTimestamp(),
       });
       localStorage.setItem(`poker_room_${code}_role`, "po");
+      localStorage.setItem(`poker_room_${code}_name`, name);
       const sessions = JSON.parse(localStorage.getItem("poker_my_sessions") || "[]");
       sessions.unshift({ code, createdAt: new Date().toISOString() });
       localStorage.setItem("poker_my_sessions", JSON.stringify(sessions.slice(0, 30)));
@@ -99,7 +101,7 @@ export default function Home() {
       const snap = await getDoc(doc(db, "rooms", code));
       if (!snap.exists()) { setRoomError("Room introuvable — vérifie le code"); return; }
       if (snap.data().status === "closed") { setRoomError("Cette session est terminée"); return; }
-      setRoomError(""); setStep("join-name");
+      setJoinData(snap.data()); setRoomError(""); setStep("join-name");
     } catch {
       toast("Erreur réseau — vérifie ta connexion.", "error");
     } finally {
@@ -107,7 +109,9 @@ export default function Home() {
     }
   }
 
-  async function handleJoinName(name) {
+  async function handleJoinName() {
+    const name = joinName.trim();
+    if (!name) return;
     const code = roomCode.toUpperCase();
     setLoading(true);
     try {
@@ -123,57 +127,91 @@ export default function Home() {
     }
   }
 
+  const nameTaken = joinData && joinData.participants && Object.keys(joinData.participants).includes(joinName.trim());
+
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: 16, height: "100dvh",
-      alignItems: "center", justifyContent: "center",
-      background: "#f3f4f6", fontFamily: "Inter, system-ui, sans-serif", padding: "0 16px",
+      minHeight: "100dvh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", gap: 16, padding: "48px 16px",
     }}>
-      <div style={{
-        background: "#fff", borderRadius: 12, padding: "36px 36px",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.07)", width: "100%", maxWidth: 380,
-        border: "1px solid #e5e7eb",
-      }}>
+      <div style={{ position: "fixed", top: 16, right: 16 }}>
+        <ThemeToggle />
+      </div>
+
+      <div className="panel" style={{ width: "100%", maxWidth: 400, padding: "34px 32px" }}>
         {/* Logo */}
-        <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{
-            width: 48, height: 48, background: "#111827", borderRadius: 10,
+            width: 52, height: 52, background: "var(--accent-soft)", borderRadius: 14,
             display: "flex", alignItems: "center", justifyContent: "center",
-            margin: "0 auto 12px", fontSize: 22,
+            margin: "0 auto 14px", fontSize: 24,
           }}>🃏</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#111827", margin: "0 0 4px" }}>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--text)", letterSpacing: -0.3 }}>
             Poker Planning
           </h1>
-          <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>
-            Sessions de refinement agile
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+            Estimez vos user stories, ensemble.
           </p>
         </div>
 
-        {/* Landing */}
+        {/* ── Landing ── */}
         {step === "landing" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn btn-primary" onClick={handleCreate} disabled={loading} style={{ flex: 1 }}>
-                {loading ? "Création…" : "Créer une room"}
-              </button>
-              <button className="btn btn-ghost" onClick={() => setStep("join-code")} style={{ flex: 1 }}>
-                Rejoindre
-              </button>
-            </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <button className="btn btn-primary btn-lg btn-block" onClick={() => reset("create")} disabled={loading}>
+              Créer une room
+            </button>
+            <button className="btn btn-secondary btn-lg btn-block" onClick={() => reset("join-code")} disabled={loading}>
+              Rejoindre avec un code
+            </button>
             {mySessions.length > 0 && (
-              <button className="btn btn-ghost" onClick={() => setStep("sessions")} style={{ width: "100%", fontSize: 12, color: "#6b7280" }}>
+              <button className="btn btn-ghost btn-sm btn-block" onClick={() => setStep("sessions")} style={{ marginTop: 4 }}>
                 Mes sessions ({mySessions.length})
               </button>
             )}
           </div>
         )}
 
-        {/* Room code */}
+        {/* ── Create ── */}
+        {step === "create" && (
+          <div>
+            <BackBtn onClick={() => reset("landing")} />
+            <label className="field-label">Ton prénom (Product Owner)</label>
+            <input
+              className="input"
+              value={poName}
+              onChange={(e) => setPoName(cleanName(e.target.value))}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              placeholder="Ex : Camille"
+              autoFocus
+              style={{ marginBottom: 20 }}
+            />
+
+            <label className="field-label">Suite de cartes</label>
+            <Segmented
+              full
+              value={sequence}
+              onChange={setSequence}
+              options={Object.values(SEQUENCES).map((s) => ({ value: s.key, label: s.label }))}
+            />
+            <p className="field-hint" style={{ margin: "8px 0 12px" }}>{getSequence(sequence).hint}</p>
+            <div className="deck" style={{ gap: 6, marginBottom: 22, pointerEvents: "none" }}>
+              {getSequence(sequence).values.map((v) => (
+                <div key={v} className="vote-card mini">{v}</div>
+              ))}
+            </div>
+
+            <button className="btn btn-primary btn-block" onClick={handleCreate} disabled={!poName.trim() || loading}>
+              {loading ? "Création…" : <>Créer la room <IconArrowRight size={16} /></>}
+            </button>
+          </div>
+        )}
+
+        {/* ── Join : code ── */}
         {step === "join-code" && (
           <div>
             <BackBtn onClick={() => reset("landing")} />
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Code de la room</p>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>6 lettres communiquées par le PO.</p>
+            <label className="field-label">Code de la room</label>
+            <p className="field-hint" style={{ marginBottom: 12 }}>6 lettres communiquées par le PO.</p>
             <input
               type="text"
               maxLength={6}
@@ -182,78 +220,73 @@ export default function Home() {
               onKeyDown={(e) => e.key === "Enter" && handleJoinCode()}
               placeholder="JARDIN"
               autoFocus
+              className="input"
               style={{
-                width: "100%", padding: "12px", borderRadius: 7,
-                border: `1px solid ${roomError ? "#dc2626" : "#e5e7eb"}`,
-                fontSize: 22, letterSpacing: 8, textAlign: "center", fontWeight: 700,
-                outline: "none", marginBottom: roomError ? 6 : 16,
-                fontFamily: "inherit", color: "#111827", textTransform: "uppercase",
+                fontSize: 24, letterSpacing: 8, textAlign: "center", fontWeight: 800,
+                marginBottom: roomError ? 6 : 16, textTransform: "uppercase",
+                borderColor: roomError ? "var(--danger)" : undefined,
               }}
             />
-            {roomError && <p style={{ color: "#dc2626", fontSize: 12, margin: "0 0 12px" }}>{roomError}</p>}
-            <button className="btn btn-primary" onClick={handleJoinCode}
-              disabled={roomCode.length !== 6 || loading} style={{ width: "100%" }}>
-              {loading ? "Vérification…" : "Continuer →"}
+            {roomError && <p style={{ color: "var(--danger-text)", fontSize: 12, margin: "0 0 12px" }}>{roomError}</p>}
+            <button className="btn btn-primary btn-block" onClick={handleJoinCode} disabled={roomCode.length !== 6 || loading}>
+              {loading ? "Vérification…" : <>Continuer <IconArrowRight size={16} /></>}
             </button>
           </div>
         )}
 
-        {/* Name selection */}
+        {/* ── Join : name ── */}
         {step === "join-name" && (
           <div>
             <BackBtn onClick={() => setStep("join-code")} />
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Qui êtes-vous ?</p>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>
-              Room <strong style={{ color: "#111827", letterSpacing: 1 }}>{roomCode.toUpperCase()}</strong>
+            <label className="field-label">Ton prénom</label>
+            <p className="field-hint" style={{ marginBottom: 12 }}>
+              Room <strong style={{ color: "var(--text)", letterSpacing: 1 }}>{roomCode.toUpperCase()}</strong>
+              {joinData?.sequence && <> · {getSequence(joinData.sequence).label}</>}
             </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {NAMES.map((n) => (
-                <button key={n} onClick={() => handleJoinName(n)} disabled={loading}
-                  style={{
-                    padding: "10px 14px", background: "#fff", color: "#111827",
-                    border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 13, fontWeight: 500,
-                    textAlign: "left", cursor: loading ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", gap: 10,
-                    opacity: loading ? 0.6 : 1, fontFamily: "inherit",
-                    transition: "border-color 0.15s, background 0.15s",
-                  }}
-                  onMouseOver={(e) => { e.currentTarget.style.borderColor = "#bfdbfe"; e.currentTarget.style.background = "#f8faff"; }}
-                  onMouseOut={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.background = "#fff"; }}
-                >
-                  <Avatar name={n} size={30} />
-                  {n}
-                </button>
-              ))}
-            </div>
+            <input
+              className="input"
+              value={joinName}
+              onChange={(e) => setJoinName(cleanName(e.target.value))}
+              onKeyDown={(e) => e.key === "Enter" && handleJoinName()}
+              placeholder="Ex : Alex"
+              autoFocus
+              style={{ marginBottom: nameTaken ? 6 : 16 }}
+            />
+            {nameTaken && (
+              <p style={{ color: "var(--amber-text)", fontSize: 12, margin: "0 0 12px" }}>
+                Ce prénom est déjà dans la room — continue si c'est bien toi.
+              </p>
+            )}
+            <button className="btn btn-primary btn-block" onClick={handleJoinName} disabled={!joinName.trim() || loading}>
+              {loading ? "Connexion…" : <>Rejoindre <IconArrowRight size={16} /></>}
+            </button>
           </div>
         )}
 
-        {/* Sessions history */}
+        {/* ── Sessions ── */}
         {step === "sessions" && (
           <div>
             <BackBtn onClick={() => reset("landing")} />
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: "0 0 4px" }}>Mes sessions</p>
-            <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 16px" }}>
-              Cliquez pour retrouver l'historique d'une session.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <label className="field-label">Mes sessions</label>
+            <p className="field-hint" style={{ marginBottom: 14 }}>Retrouve l'historique d'une de tes rooms.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {mySessions.map((s) => {
                 const date = new Date(s.createdAt).toLocaleDateString("fr-FR", {
                   day: "2-digit", month: "2-digit", year: "numeric",
                 });
                 return (
-                  <button key={s.code} onClick={() => navigate(`/room/${s.code}`)}
+                  <button
+                    key={s.code}
+                    onClick={() => navigate(`/room/${s.code}`)}
+                    className="card"
                     style={{
-                      padding: "10px 14px", background: "#fff", border: "1px solid #e5e7eb",
-                      borderRadius: 7, fontSize: 13, textAlign: "left", cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "space-between",
-                      fontFamily: "inherit", transition: "border-color 0.15s",
+                      cursor: "pointer", padding: "12px 16px", textAlign: "left",
+                      fontFamily: "inherit",
                     }}
-                    onMouseOver={(e) => e.currentTarget.style.borderColor = "#bfdbfe"}
-                    onMouseOut={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
                   >
-                    <span style={{ fontWeight: 700, letterSpacing: 1, color: "#111827" }}>{s.code}</span>
-                    <span style={{ fontSize: 11, color: "#9ca3af" }}>{date}</span>
+                    <span style={{ fontWeight: 700, letterSpacing: 1, color: "var(--text)" }}>{s.code}</span>
+                    <span style={{ fontSize: 12, color: "var(--text-faint)" }}>{date}</span>
                   </button>
                 );
               })}
@@ -265,9 +298,9 @@ export default function Home() {
       <button
         onClick={() => setFeaturesOpen(true)}
         style={{
-          background: "none", border: "none", color: "#9ca3af", fontSize: 11,
+          background: "none", border: "none", color: "var(--text-faint)", fontSize: 12,
           cursor: "pointer", fontFamily: "inherit", padding: 4,
-          textDecoration: "underline", textUnderlineOffset: 3, opacity: 0.75,
+          textDecoration: "underline", textUnderlineOffset: 3,
         }}
       >
         Fonctionnalités
